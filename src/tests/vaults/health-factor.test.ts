@@ -1,4 +1,4 @@
-import { TestHelper, TestAmounts } from '../test-helper.js';
+import { TestHelper } from '../test-helper.js';
 import { UInt64 } from 'o1js';
 import { describe, it, before } from 'node:test';
 import assert from 'node:assert';
@@ -198,7 +198,7 @@ describe('zkUSD Vault Health Factor Calculations Test Suite', () => {
         await testHelper.agents.alice.vault?.contract.collateralAmount.fetch();
       const debt =
         await testHelper.agents.alice.vault?.contract.debtAmount.fetch();
-      const price = await testHelper.engine.contract.getPrice();
+      const price = await testHelper.engine.contract.getMinaPrice();
 
       const healthFactor =
         await testHelper.engine.contract.getVaultHealthFactor(

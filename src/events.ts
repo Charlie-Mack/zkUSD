@@ -22,7 +22,7 @@ export class RedeemCollateralEvent extends Struct({
   amountRedeemed: UInt64,
   vaultCollateralAmount: UInt64,
   vaultDebtAmount: UInt64,
-  price: UInt64,
+  minaPrice: UInt64,
 }) {}
 
 export class MintZkUsdEvent extends Struct({
@@ -30,7 +30,7 @@ export class MintZkUsdEvent extends Struct({
   amountMinted: UInt64,
   vaultCollateralAmount: UInt64,
   vaultDebtAmount: UInt64,
-  price: UInt64,
+  minaPrice: UInt64,
 }) {}
 
 export class BurnZkUsdEvent extends Struct({
@@ -45,18 +45,18 @@ export class LiquidateEvent extends Struct({
   liquidator: PublicKey,
   vaultCollateralLiquidated: UInt64,
   vaultDebtRepaid: UInt64,
-  price: UInt64,
+  minaPrice: UInt64,
 }) {}
 
-export class PriceUpdateEvent extends Struct({
+export class MinaPriceUpdateEvent extends Struct({
   newPrice: UInt64,
 }) {}
 
-export class FallbackPriceUpdateEvent extends Struct({
+export class FallbackMinaPriceUpdateEvent extends Struct({
   newPrice: UInt64,
 }) {}
 
-export class PriceSubmissionEvent extends Struct({
+export class MinaPriceSubmissionEvent extends Struct({
   submitter: PublicKey,
   price: UInt64,
   oracleFee: UInt64,

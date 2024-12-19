@@ -1,22 +1,18 @@
 import {
   Mina,
   PrivateKey,
-  SmartContract,
   PublicKey,
   AccountUpdate,
   UInt8,
   Bool,
   Field,
   UInt64,
-  Experimental,
   UInt32,
 } from 'o1js';
-import { OracleWhitelist, ProtocolData } from '../types.js';
+import { OracleWhitelist } from '../types.js';
 import { ZkUsdEngine, ZkUsdEngineDeployProps } from '../zkusd-engine.js';
 import { ZkUsdVault } from '../zkusd-vault.js';
 import {
-  FungibleToken,
-  FungibleTokenAdminBase,
   FungibleTokenContract,
 } from '@minatokens/token';
 import { ZkUsdMasterOracle } from '../zkusd-master-oracle.js';
@@ -70,6 +66,7 @@ export class TestAmounts {
   // Price amounts
   static PRICE_0_USD = UInt64.from(0); // 0 USD
   static PRICE_25_CENT = UInt64.from(0.25e9); // 0.25 USD
+  static PRICE_40_CENT = UInt64.from(0.40e9); // 0.40 USD
   static PRICE_48_CENT = UInt64.from(0.48e9); // 0.48 USD
   static PRICE_49_CENT = UInt64.from(0.49e9); // 0.49 USD
   static PRICE_50_CENT = UInt64.from(0.5e9); // 0.50 USD
@@ -373,7 +370,7 @@ export class TestHelper {
     await this.transaction(this.deployer, async () => {
       AccountUpdate.fundNewAccount(this.deployer, 8);
       const au = AccountUpdate.createSigned(this.deployer);
-      for (const [name, oracle] of Object.entries(this.oracles)) {
+      for (const [_name, oracle] of Object.entries(this.oracles)) {
         au.send({
           to: oracle.publicKey,
           amount: TestAmounts.COLLATERAL_50_MINA,
@@ -425,13 +422,13 @@ export class TestHelper {
           );
         },
         {
-          extraSigners: [this.agents[name].vault.privateKey],
+          extraSigners: [this.agents[name].vault!.privateKey],
         }
       );
     }
   }
 
-  async updateOraclePrice(price: UInt64) {
+  async updateOracleMinaPrice(price: UInt64) {
     // Use the map to iterate over whitelisted oracles
     for (const [oracleName] of this.whitelistedOracles) {
       await this.transaction(this.oracles[oracleName], async () => {

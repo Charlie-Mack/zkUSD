@@ -42,7 +42,7 @@ export class ZkUsdMasterOracle extends SmartContract {
       .assertTrue(ZkUsdMasterOracleErrors.AMOUNT_ZERO);
 
     //Update the fallback price based on the current block
-    const { evenPrice, oddPrice } = this.updateBlockPrices(
+    const { evenPrice, oddPrice } = this.updateBlockMinaPrices(
       isOddBlock,
       price,
       currentPrices
@@ -112,7 +112,7 @@ export class ZkUsdMasterOracle extends SmartContract {
    * @param   currentPrices The current prices
    * @returns The updated prices
    */
-  private updateBlockPrices(
+  private updateBlockMinaPrices(
     isOddBlock: Bool,
     newPrice: UInt64,
     currentPrices: { even: UInt64; odd: UInt64 }

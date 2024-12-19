@@ -182,7 +182,7 @@ describe('zkUSD Vault Mint Test Suite', () => {
         testHelper.agents.alice.vault?.contract.calculateHealthFactor(
           initialCollateral!,
           currentDebt!.add(TestAmounts.DEBT_1_ZKUSD),
-          await testHelper.engine.contract.getPrice()
+          await testHelper.engine.contract.getMinaPrice()
         );
 
       // Only mint if health factor would remain above minimum
@@ -204,7 +204,7 @@ describe('zkUSD Vault Mint Test Suite', () => {
       testHelper.agents.alice.vault?.contract.calculateHealthFactor(
         initialCollateral!,
         currentDebt!,
-        await testHelper.engine.contract.getPrice()
+        await testHelper.engine.contract.getMinaPrice()
       );
 
     assert.strictEqual(

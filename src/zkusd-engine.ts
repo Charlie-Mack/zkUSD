@@ -1,5 +1,4 @@
 import {
-  FungibleTokenContract as FungibleToken,
   FungibleTokenAdminBase,
   FungibleTokenContract,
 } from '@minatokens/token';
@@ -11,11 +10,8 @@ import {
   method,
   Provable,
   PublicKey,
-  Reducer,
-  SmartContract,
   State,
   state,
-  Struct,
   UInt32,
   UInt64,
   Permissions,
@@ -38,10 +34,10 @@ import {
 import { ZkUsdMasterOracle } from './zkusd-master-oracle.js';
 import { ZkUsdPriceTracker } from './zkusd-price-tracker.js';
 import {
-  PriceUpdateEvent,
-  FallbackPriceUpdateEvent,
+  MinaPriceUpdateEvent,
+  FallbackMinaPriceUpdateEvent,
   OracleFundsDepositedEvent,
-  PriceSubmissionEvent,
+  MinaPriceSubmissionEvent,
   EmergencyStopEvent,
   EmergencyResumeEvent,
   AdminUpdatedEvent,
@@ -93,8 +89,8 @@ export class ZkUsdEngine
   extends TokenContract
   implements FungibleTokenAdminBase
 {
-  @state(UInt64) priceEvenBlock = State<UInt64>();
-  @state(UInt64) priceOddBlock = State<UInt64>();
+  @state(UInt64) minaPriceEvenBlock = State<UInt64>();
+  @state(UInt64) minaPriceOddBlock = State<UInt64>();
   @state(Field) oracleWhitelistHash = State<Field>(); // Hash of the oracle whitelist
   @state(ProtocolDataPacked) protocolDataPacked = State<ProtocolDataPacked>();
   @state(Field) vaultVerificationKeyHash = State<Field>(); // Hash of the vault verification key
@@ -123,10 +119,10 @@ export class ZkUsdEngine
   static FungibleToken = FungibleTokenContract(ZkUsdEngine);
 
   readonly events = {
-    PriceUpdate: PriceUpdateEvent,
-    FallbackPriceUpdate: FallbackPriceUpdateEvent,
+    MinaPriceUpdate: MinaPriceUpdateEvent,
+    FallbackMinaPriceUpdate: FallbackMinaPriceUpdateEvent,
     OracleFundsDeposited: OracleFundsDepositedEvent,
-    PriceSubmission: PriceSubmissionEvent,
+    MinaPriceSubmission: MinaPriceSubmissionEvent,
     EmergencyStop: EmergencyStopEvent,
     EmergencyResume: EmergencyResumeEvent,
     AdminUpdated: AdminUpdatedEvent,
@@ -158,8 +154,8 @@ export class ZkUsdEngine
       send: Permissions.proof(),
     });
 
-    this.priceEvenBlock.set(args.initialPrice);
-    this.priceOddBlock.set(args.initialPrice);
+    this.minaPriceEvenBlock.set(args.initialPrice);
+    this.minaPriceOddBlock.set(args.initialPrice);
 
     this.oracleWhitelistHash.set(Field.from(0));
 
@@ -217,11 +213,11 @@ export class ZkUsdEngine
       value: masterOracleVerificationKey,
     };
 
-    masterOracle.body.update.appState[0].value = this.priceEvenBlock
+    masterOracle.body.update.appState[0].value = this.minaPriceEvenBlock
       .getAndRequireEquals()
       .toFields()[0];
     masterOracle.body.update.appState[0].isSome = Bool(true);
-    masterOracle.body.update.appState[1].value = this.priceOddBlock
+    masterOracle.body.update.appState[1].value = this.minaPriceOddBlock
       .getAndRequireEquals()
       .toFields()[0];
     masterOracle.body.update.appState[1].isSome = Bool(true);
@@ -254,12 +250,12 @@ export class ZkUsdEngine
     };
 
     const evenPackedPriceSubmission = PriceSubmission.new(
-      this.priceEvenBlock.getAndRequireEquals(),
+      this.minaPriceEvenBlock.getAndRequireEquals(),
       UInt32.from(this.network.blockchainLength.getAndRequireEquals())
     ).pack();
 
     const oddPackedPriceSubmission = PriceSubmission.new(
-      this.priceOddBlock.getAndRequireEquals(),
+      this.minaPriceOddBlock.getAndRequireEquals(),
       UInt32.from(this.network.blockchainLength.getAndRequireEquals())
     ).pack();
 
@@ -507,7 +503,7 @@ export class ZkUsdEngine
     const vault = new ZkUsdVault(vaultAddress, this.deriveTokenId());
 
     //Get the price
-    const price = await this.getPrice();
+    const minaPrice = await this.getMinaPrice();
 
     //Get the owner of the collateral
     const owner = this.sender.getAndRequireSignature();
@@ -516,7 +512,7 @@ export class ZkUsdEngine
     const { collateralAmount, debtAmount } = await vault.redeemCollateral(
       amount,
       owner,
-      price
+      minaPrice
     );
 
     //Send the collateral back to the sender
@@ -540,7 +536,7 @@ export class ZkUsdEngine
         amountRedeemed: amount,
         vaultCollateralAmount: collateralAmount,
         vaultDebtAmount: debtAmount,
-        price: price,
+        minaPrice,
       })
     );
   }
@@ -560,7 +556,7 @@ export class ZkUsdEngine
     );
 
     //Get the price
-    const price = await this.getPrice();
+    const minaPrice = await this.getMinaPrice();
 
     //Get the owner of the zkUSD
     const owner = this.sender.getAndRequireSignature();
@@ -569,7 +565,7 @@ export class ZkUsdEngine
     const { collateralAmount, debtAmount } = await vault.mintZkUsd(
       amount,
       owner,
-      price
+      minaPrice
     );
 
     //Mint the zkUSD for the recipient
@@ -586,7 +582,7 @@ export class ZkUsdEngine
         amountMinted: amount,
         vaultCollateralAmount: collateralAmount,
         vaultDebtAmount: debtAmount,
-        price: price,
+        minaPrice,
       })
     );
   }
@@ -601,7 +597,9 @@ export class ZkUsdEngine
     const vault = new ZkUsdVault(vaultAddress, this.deriveTokenId());
 
     //Get the owner of the zkUSD
-    const owner = this.sender.getAndRequireSignature();
+    // we have sender signature from zkUSD.burn
+    // TODO verify
+    const owner = this.sender.getUnconstrained();
 
     //Get the zkUSD token contract
     const zkUSD = new ZkUsdEngine.FungibleToken(
@@ -631,6 +629,8 @@ export class ZkUsdEngine
 
   /**
    * @notice  Liquidates a vault as long as the health factor is below 100
+   *          The liquidator receives the collateral in value of the repaid debt
+   *          plus a bonus. The rest is sent to the vault owner.
    * @param   vaultAddress The address of the vault to liquidate
    */
   @method async liquidate(vaultAddress: PublicKey) {
@@ -642,21 +642,35 @@ export class ZkUsdEngine
       ZkUsdEngine.ZKUSD_TOKEN_ADDRESS
     );
 
-    //Get the liquidator
-    const liquidator = this.sender.getAndRequireSignature();
+    // Get the liquidator
+    // NOTE. we have sender signature from zkUSD.burn
+    //       so we can use unconstrained
+    const liquidator = this.sender.getUnconstrained();
+
+    // Get the vault owner
+    const vaultOwner = vault.owner.getAndRequireEquals();
 
     //Get the price
-    const price = await this.getPrice();
+    const minaPrice = await this.getMinaPrice();
 
-    const { collateralAmount, debtAmount } = await vault.liquidate(price);
+    const { oldVaultState, liquidatorCollateral, vaultOwnerCollateral}
+      = await vault.liquidate2(minaPrice);
+
+    oldVaultState.collateralAmount.assertEquals(liquidatorCollateral.add(vaultOwnerCollateral));
 
     //Burn the debt from the liquidator
-    await zkUSD.burn(liquidator, debtAmount);
+    await zkUSD.burn(liquidator, oldVaultState.debtAmount);
 
     //Send the collateral to the liquidator
     this.send({
       to: liquidator,
-      amount: collateralAmount,
+      amount: liquidatorCollateral,
+    });
+
+    //Send the collateral to the liquidator
+    this.send({
+      to: vaultOwner,
+      amount: vaultOwnerCollateral,
     });
 
     //Update the total deposited collateral
@@ -665,17 +679,17 @@ export class ZkUsdEngine
       this.deriveTokenId()
     );
     totalDepositedCollateral.balanceChange =
-      Int64.fromUnsigned(collateralAmount).neg();
+      Int64.fromUnsigned(oldVaultState.collateralAmount).neg();
 
     //Emit the Liquidate event
     this.emitEvent(
       'Liquidate',
       new LiquidateEvent({
-        vaultAddress: vaultAddress,
+        vaultAddress,
         liquidator: this.sender.getUnconstrained(),
-        vaultCollateralLiquidated: collateralAmount,
-        vaultDebtRepaid: debtAmount,
-        price: price,
+        vaultCollateralLiquidated: oldVaultState.collateralAmount,
+        vaultDebtRepaid: oldVaultState.debtAmount,
+        minaPrice,
       })
     );
   }
@@ -691,10 +705,10 @@ export class ZkUsdEngine
     const vault = new ZkUsdVault(vaultAddress, this.deriveTokenId());
 
     //Get the price
-    const price = await this.getPrice();
+    const minaPrice = await this.getMinaPrice();
 
     //Return the health factor
-    return vault.getHealthFactor(price);
+    return vault.getHealthFactor(minaPrice);
   }
 
   /**
@@ -864,9 +878,9 @@ export class ZkUsdEngine
 
   /**
    * @notice  Updates the fallback price
-   * @param   price The new fallback price
+   * @param   newMinaPrice The new fallback price
    */
-  @method async updateFallbackPrice(price: UInt64) {
+  @method async updateFallbackPrice(newMinaPrice: UInt64) {
     //Ensure admin signature
     await this.ensureAdminSignature();
 
@@ -875,10 +889,10 @@ export class ZkUsdEngine
       this.deriveTokenId()
     );
 
-    await masterOracle.updateFallbackPrice(price);
+    await masterOracle.updateFallbackPrice(newMinaPrice);
 
-    this.emitEvent('FallbackPriceUpdate', {
-      newPrice: price,
+    this.emitEvent('FallbackMinaPriceUpdate', {
+      newPrice: newMinaPrice,
     });
   }
 
@@ -888,10 +902,10 @@ export class ZkUsdEngine
    *          However in the event that it doesn't, we should not fail the price submission
    *          We hope that the oracles will have enough good will to continue to submit prices
    *          until the contract is funded again
-   * @param   price The new price
+   * @param   minaPrice The new price of MINA in USD
    * @param   whitelist The whitelist of authorized oracles
    */
-  @method async submitPrice(price: UInt64, whitelist: OracleWhitelist) {
+  @method async submitPrice(minaPrice: UInt64, whitelist: OracleWhitelist) {
     const { isOddBlock } = this.getBlockInfo();
     //We need to ensure the sender is the oracle in the whitelist
     const submitter = this.sender.getAndRequireSignature();
@@ -905,7 +919,7 @@ export class ZkUsdEngine
     const oracleFee = protocolData.oracleFlatFee;
 
     //Ensure price is greater than zero
-    price.greaterThan(UInt64.zero).assertTrue(ZkUsdEngineErrors.AMOUNT_ZERO);
+    minaPrice.greaterThan(UInt64.zero).assertTrue(ZkUsdEngineErrors.AMOUNT_ZERO);
 
     const oraclePriceTrackerAddress = Provable.if(
       isOddBlock,
@@ -923,17 +937,17 @@ export class ZkUsdEngine
         Bool(false)
       );
 
-      let priceUpdate = AccountUpdate.createIf(
+      let minaPriceUpdate = AccountUpdate.createIf(
         isAtIndex,
         oraclePriceTrackerAddress,
         this.deriveTokenId()
       );
 
-      const submission = PriceSubmission.new(price, blockchainLength).pack();
+      const submission = PriceSubmission.new(minaPrice, blockchainLength).pack();
 
-      priceUpdate.body.useFullCommitment = Bool(true);
+      minaPriceUpdate.body.useFullCommitment = Bool(true);
 
-      priceUpdate.body.update.appState[i] = {
+      minaPriceUpdate.body.update.appState[i] = {
         isSome: Bool(true),
         value: PriceSubmissionPacked.toFields(submission)[0],
       };
@@ -956,10 +970,10 @@ export class ZkUsdEngine
 
     // Add price submission event
     this.emitEvent(
-      'PriceSubmission',
-      new PriceSubmissionEvent({
+      'MinaPriceSubmission',
+      new MinaPriceSubmissionEvent({
         submitter: submitter,
-        price: price,
+        price: minaPrice,
         oracleFee: oracleFee,
       })
     );
@@ -977,7 +991,7 @@ export class ZkUsdEngine
   @method async settlePriceUpdate() {
     //Preconditions
     const { isOddBlock } = this.getBlockInfo();
-    const currentPrices = this.getAndRequireCurrentPrices();
+    const currentPrices = this.getAndRequireCurrentMinaPrices();
 
     //Get the master oracle
     const masterOracle = new ZkUsdMasterOracle(
@@ -1004,19 +1018,19 @@ export class ZkUsdEngine
     const medianPrice = await priceTracker.calculateMedianPrice(fallbackPrice);
 
     //Update the correct price based on the median price
-    const { evenPrice, oddPrice } = this.updateBlockPrices(
+    const { evenPrice, oddPrice } = this.updateBlockMinaPrices(
       isOddBlock,
       medianPrice,
       currentPrices
     );
 
-    this.priceEvenBlock.set(evenPrice);
-    this.priceOddBlock.set(oddPrice);
+    this.minaPriceEvenBlock.set(evenPrice);
+    this.minaPriceOddBlock.set(oddPrice);
 
     // Add price update event
     this.emitEvent(
-      'PriceUpdate',
-      new PriceUpdateEvent({
+      'MinaPriceUpdate',
+      new MinaPriceUpdateEvent({
         newPrice: medianPrice,
       })
     );
@@ -1025,9 +1039,9 @@ export class ZkUsdEngine
   /**
    * @notice  Returns the current price
    * @notice  If the protcol is halted, this will fail, meaning that no actions can be taken from the vaults
-   * @returns The price based on the current block
+   * @returns The MINA/USD price based on the current block
    */
-  async getPrice(): Promise<UInt64> {
+  async getMinaPrice(): Promise<UInt64> {
     //Preconditions
     const protocolData = ProtocolData.unpack(
       this.protocolDataPacked.getAndRequireEquals()
@@ -1038,11 +1052,11 @@ export class ZkUsdEngine
     protocolData.emergencyStop.assertFalse(ZkUsdEngineErrors.EMERGENCY_HALT);
 
     //Get the current prices
-    const prices = this.getCurrentPrices();
+    const prices = this.getCurrentMinaPrices();
 
     //Ensure the correct price is returned based on the current block
-    this.priceOddBlock.requireEqualsIf(isOddBlock, prices.odd);
-    this.priceEvenBlock.requireEqualsIf(isOddBlock.not(), prices.even);
+    this.minaPriceOddBlock.requireEqualsIf(isOddBlock, prices.odd);
+    this.minaPriceEvenBlock.requireEqualsIf(isOddBlock.not(), prices.even);
 
     return Provable.if(isOddBlock, prices.odd, prices.even);
   }
@@ -1071,39 +1085,39 @@ export class ZkUsdEngine
   /**
    * @notice  Updates the price based on the current block, if we are on an odd block, we update the even price, otherwise we update the odd price
    * @param   isOddBlock The isOddBlock flag
-   * @param   newPrice The new price
+   * @param   newMinaPrice The new price MINA/USD price
    * @param   currentPrices The current prices
    * @returns The updated prices
    */
-  private updateBlockPrices(
+  private updateBlockMinaPrices(
     isOddBlock: Bool,
-    newPrice: UInt64,
+    newMinaPrice: UInt64,
     currentPrices: { even: UInt64; odd: UInt64 }
   ) {
-    const evenPrice = Provable.if(isOddBlock, newPrice, currentPrices.even);
-    const oddPrice = Provable.if(isOddBlock.not(), newPrice, currentPrices.odd);
+    const evenPrice = Provable.if(isOddBlock, newMinaPrice, currentPrices.even);
+    const oddPrice = Provable.if(isOddBlock.not(), newMinaPrice, currentPrices.odd);
     return { evenPrice, oddPrice };
   }
 
   /**
    * @notice  Helper function to return the current prices
-   * @returns The current prices
+   * @returns The current prices of MINA in USD
    */
-  private getCurrentPrices(): { even: UInt64; odd: UInt64 } {
+  private getCurrentMinaPrices(): { even: UInt64; odd: UInt64 } {
     return {
-      even: this.priceEvenBlock.get(),
-      odd: this.priceOddBlock.get(),
+      even: this.minaPriceEvenBlock.get(),
+      odd: this.minaPriceOddBlock.get(),
     };
   }
 
   /**
    * @notice  Helper function to return the current prices and set the preconditions
-   * @returns The current prices
+   * @returns The current prices of MINA in USD
    */
-  private getAndRequireCurrentPrices(): { even: UInt64; odd: UInt64 } {
+  private getAndRequireCurrentMinaPrices(): { even: UInt64; odd: UInt64 } {
     return {
-      even: this.priceEvenBlock.getAndRequireEquals(),
-      odd: this.priceOddBlock.getAndRequireEquals(),
+      even: this.minaPriceEvenBlock.getAndRequireEquals(),
+      odd: this.minaPriceOddBlock.getAndRequireEquals(),
     };
   }
 
