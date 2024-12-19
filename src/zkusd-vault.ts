@@ -48,7 +48,6 @@ export class ZkUsdVault extends SmartContract {
   static MIN_HEALTH_FACTOR = UInt64.from(100); // The minimum health factor that the vault must maintain when adjusted
   static LIQUIDATION_BONUS_RATIO = Field.from(110); // The value ratio of the liquidation
 
-
   /**
    * @notice  This method is used to update the owner of the vault
    * @param   newOwner - The new owner of the vault
@@ -235,45 +234,8 @@ export class ZkUsdVault extends SmartContract {
    * @notice  This method is used to liquidate the vault. It doesn't require the secret and can be called by anyone
    *          as long as the health factor is less than the minimum health factor. The liquidator receives the collateral in return.
    */
-  @method.returns(VaultState)
-  public async liquidate(minaPrice: UInt64) {
-    //Preconditions
-    let collateralAmount = this.collateralAmount.getAndRequireEquals();
-    let debtAmount = this.debtAmount.getAndRequireEquals();
-
-    //Calculate the health factor
-    const healthFactor = this.calculateHealthFactor(
-      collateralAmount,
-      debtAmount,
-      minaPrice
-    );
-
-    //Assert the health factor is less than the minimum health factor
-    healthFactor.assertLessThanOrEqual(
-      ZkUsdVault.MIN_HEALTH_FACTOR,
-      ZkUsdVaultErrors.HEALTH_FACTOR_TOO_HIGH
-    );
-
-    //Update the collateral amount
-    this.collateralAmount.set(UInt64.zero);
-
-    //Update the debt amount
-    this.debtAmount.set(UInt64.zero);
-
-    //Return the vault state before liquidation
-    return new VaultState({
-      collateralAmount: collateralAmount,
-      debtAmount: debtAmount,
-      owner: this.owner.getAndRequireEquals(),
-    });
-  }
-
-  /**
-   * @notice  This method is used to liquidate the vault. It doesn't require the secret and can be called by anyone
-   *          as long as the health factor is less than the minimum health factor. The liquidator receives the collateral in return.
-   */
   @method.returns(LiquidationResults)
-  public async liquidate2(minaPrice: UInt64) {
+  public async liquidate(minaPrice: UInt64) {
     //Preconditions
     const collateralAmount = this.collateralAmount.getAndRequireEquals();
     const debtAmount = this.debtAmount.getAndRequireEquals();
@@ -298,8 +260,12 @@ export class ZkUsdVault extends SmartContract {
     this.debtAmount.set(UInt64.zero);
 
     // compute the collateral to be sent to the liquidator and the vault owner
-    const  { liquidatorCollateral, vaultOwnerCollateral } = await this.computeLiquidationAmounts(
-      {collateralAmount: collateralAmount.value, liquidatedDebt: debtAmount.value, minaPrice: minaPrice.value});
+    const { liquidatorCollateral, vaultOwnerCollateral } =
+      await this.computeLiquidationAmounts({
+        collateralAmount: collateralAmount.value,
+        liquidatedDebt: debtAmount.value,
+        minaPrice: minaPrice.value,
+      });
 
     //Return the vault state before liquidation
     const oldVaultState = {
@@ -308,13 +274,12 @@ export class ZkUsdVault extends SmartContract {
       owner: this.owner.getAndRequireEquals(),
     };
 
-    return new LiquidationResults( {
+    return new LiquidationResults({
       oldVaultState,
       liquidatorCollateral: UInt64.Unsafe.fromField(liquidatorCollateral), // are we okay being usafe here? whats the policy on Field vs UInt64
-      vaultOwnerCollateral: UInt64.Unsafe.fromField(vaultOwnerCollateral)
+      vaultOwnerCollateral: UInt64.Unsafe.fromField(vaultOwnerCollateral),
     });
   }
-
 
   /**
    * @notice  This method is used to get the health factor of the vault
@@ -346,7 +311,10 @@ export class ZkUsdVault extends SmartContract {
     debtAmount: UInt64,
     minaPrice: UInt64
   ): UInt64 {
-    const collateralValue = this.calculateUsdValue(collateralAmount.value, minaPrice.value);
+    const collateralValue = this.calculateUsdValue(
+      collateralAmount.value,
+      minaPrice.value
+    );
     const maxAllowedDebt = this.calculateMaxAllowedDebt(collateralValue);
     const debtInFields = debtAmount.toFields()[0];
     return UInt64.fromFields([this.safeDiv(maxAllowedDebt, debtInFields)]);
@@ -359,7 +327,10 @@ export class ZkUsdVault extends SmartContract {
    * @returns The USD value of the collateral
    */
   private calculateUsdValue(amount: Field, minaPrice: Field): Field {
-    return this.fieldIntegerDiv(amount.mul(minaPrice), ZkUsdVault.UNIT_PRECISION);
+    return this.fieldIntegerDiv(
+      amount.mul(minaPrice),
+      ZkUsdVault.UNIT_PRECISION
+    );
   }
 
   /**
@@ -369,8 +340,11 @@ export class ZkUsdVault extends SmartContract {
    * @returns The calculated MINA value corresponding to the provided USD amount.
    */
   private calculateMinaValue(usdValue: Field, minaPrice: Field): Field {
-    return this.fieldIntegerDiv(usdValue.mul(ZkUsdVault.UNIT_PRECISION), minaPrice);
-}
+    return this.fieldIntegerDiv(
+      usdValue.mul(ZkUsdVault.UNIT_PRECISION),
+      minaPrice
+    );
+  }
 
   /**
    * @notice  This method is used to calculate the maximum allowed debt based on the collateral value
@@ -391,31 +365,34 @@ export class ZkUsdVault extends SmartContract {
   }
 
   /**
-  * @notice  Computes the amounts of collateral to be sent to the liquidator and the vault owner
-  *          during a liquidation process.
-  * @param   args - An object containing the following properties:
-  *           - collateralAmount: The total amount of collateral in the vault (UInt64).
-  *           - liquidatedDebt: The amount of debt to be liquidated from the vault (UInt64).
-  *           - minaPrice: The USD price of the collateral (UInt64).
-  * @returns A promise that resolves to an object containing:
-  *           - liquidatorCollateral: The amount of collateral to be sent to the liquidator.
-  *           - ownerCollateral: The remaining collateral to be returned to the vault owner.
-  */
-  private async computeLiquidationAmounts(
-    args:
-      { collateralAmount: Field
-      , liquidatedDebt: Field
-      , minaPrice: Field}
-  ) {
+   * @notice  Computes the amounts of collateral to be sent to the liquidator and the vault owner
+   *          during a liquidation process.
+   * @param   args - An object containing the following properties:
+   *           - collateralAmount: The total amount of collateral in the vault (UInt64).
+   *           - liquidatedDebt: The amount of debt to be liquidated from the vault (UInt64).
+   *           - minaPrice: The USD price of the collateral (UInt64).
+   * @returns A promise that resolves to an object containing:
+   *           - liquidatorCollateral: The amount of collateral to be sent to the liquidator.
+   *           - ownerCollateral: The remaining collateral to be returned to the vault owner.
+   */
+  private async computeLiquidationAmounts(args: {
+    collateralAmount: Field;
+    liquidatedDebt: Field;
+    minaPrice: Field;
+  }) {
     // TODO verify rounding and precision
-    const  { collateralAmount, liquidatedDebt, minaPrice } = args;
+    const { collateralAmount, liquidatedDebt, minaPrice } = args;
 
     // Calculate the USD value of the collateral
-    const liquidatedDebtMina = this.calculateMinaValue(liquidatedDebt, minaPrice);
+    const liquidatedDebtMina = this.calculateMinaValue(
+      liquidatedDebt,
+      minaPrice
+    );
 
-    const liquidatorMaxCollateral = this.fieldIntegerDiv(liquidatedDebtMina.mul(
-      ZkUsdVault.LIQUIDATION_BONUS_RATIO
-    ), Field(100));
+    const liquidatorMaxCollateral = this.fieldIntegerDiv(
+      liquidatedDebtMina.mul(ZkUsdVault.LIQUIDATION_BONUS_RATIO),
+      Field(100)
+    );
 
     // Calculate the USD value of the collateral that the liquidator will get
     const liquidatorCollateral = Provable.if(

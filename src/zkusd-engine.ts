@@ -653,10 +653,12 @@ export class ZkUsdEngine
     //Get the price
     const minaPrice = await this.getMinaPrice();
 
-    const { oldVaultState, liquidatorCollateral, vaultOwnerCollateral}
-      = await vault.liquidate2(minaPrice);
+    const { oldVaultState, liquidatorCollateral, vaultOwnerCollateral } =
+      await vault.liquidate(minaPrice);
 
-    oldVaultState.collateralAmount.assertEquals(liquidatorCollateral.add(vaultOwnerCollateral));
+    oldVaultState.collateralAmount.assertEquals(
+      liquidatorCollateral.add(vaultOwnerCollateral)
+    );
 
     //Burn the debt from the liquidator
     await zkUSD.burn(liquidator, oldVaultState.debtAmount);
@@ -667,7 +669,7 @@ export class ZkUsdEngine
       amount: liquidatorCollateral,
     });
 
-    //Send the collateral to the liquidator
+    //Send the collateral to the vault owner
     this.send({
       to: vaultOwner,
       amount: vaultOwnerCollateral,
@@ -678,8 +680,9 @@ export class ZkUsdEngine
       this.address,
       this.deriveTokenId()
     );
-    totalDepositedCollateral.balanceChange =
-      Int64.fromUnsigned(oldVaultState.collateralAmount).neg();
+    totalDepositedCollateral.balanceChange = Int64.fromUnsigned(
+      oldVaultState.collateralAmount
+    ).neg();
 
     //Emit the Liquidate event
     this.emitEvent(
@@ -919,7 +922,9 @@ export class ZkUsdEngine
     const oracleFee = protocolData.oracleFlatFee;
 
     //Ensure price is greater than zero
-    minaPrice.greaterThan(UInt64.zero).assertTrue(ZkUsdEngineErrors.AMOUNT_ZERO);
+    minaPrice
+      .greaterThan(UInt64.zero)
+      .assertTrue(ZkUsdEngineErrors.AMOUNT_ZERO);
 
     const oraclePriceTrackerAddress = Provable.if(
       isOddBlock,
@@ -943,7 +948,10 @@ export class ZkUsdEngine
         this.deriveTokenId()
       );
 
-      const submission = PriceSubmission.new(minaPrice, blockchainLength).pack();
+      const submission = PriceSubmission.new(
+        minaPrice,
+        blockchainLength
+      ).pack();
 
       minaPriceUpdate.body.useFullCommitment = Bool(true);
 
@@ -1095,7 +1103,11 @@ export class ZkUsdEngine
     currentPrices: { even: UInt64; odd: UInt64 }
   ) {
     const evenPrice = Provable.if(isOddBlock, newMinaPrice, currentPrices.even);
-    const oddPrice = Provable.if(isOddBlock.not(), newMinaPrice, currentPrices.odd);
+    const oddPrice = Provable.if(
+      isOddBlock.not(),
+      newMinaPrice,
+      currentPrices.odd
+    );
     return { evenPrice, oddPrice };
   }
 

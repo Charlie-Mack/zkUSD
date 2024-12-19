@@ -12,9 +12,7 @@ import {
 import { OracleWhitelist } from '../types.js';
 import { ZkUsdEngine, ZkUsdEngineDeployProps } from '../zkusd-engine.js';
 import { ZkUsdVault } from '../zkusd-vault.js';
-import {
-  FungibleTokenContract,
-} from '@minatokens/token';
+import { FungibleTokenContract } from '@minatokens/token';
 import { ZkUsdMasterOracle } from '../zkusd-master-oracle.js';
 import { ZkUsdPriceTracker } from '../zkusd-price-tracker.js';
 
@@ -46,6 +44,7 @@ export class TestAmounts {
   // Collateral amounts
   static COLLATERAL_900_MINA = UInt64.from(900e9); // 900 Mina
   static COLLATERAL_200_MINA = UInt64.from(200e9); // 200 Mina
+  static COLLATERAL_105_MINA = UInt64.from(105e9); // 105 Mina
   static COLLATERAL_100_MINA = UInt64.from(100e9); // 100 Mina
   static COLLATERAL_50_MINA = UInt64.from(50e9); // 50 Mina
   static COLLATERAL_2_MINA = UInt64.from(2e9); // 2 Mina
@@ -66,7 +65,7 @@ export class TestAmounts {
   // Price amounts
   static PRICE_0_USD = UInt64.from(0); // 0 USD
   static PRICE_25_CENT = UInt64.from(0.25e9); // 0.25 USD
-  static PRICE_40_CENT = UInt64.from(0.40e9); // 0.40 USD
+  static PRICE_40_CENT = UInt64.from(0.4e9); // 0.40 USD
   static PRICE_48_CENT = UInt64.from(0.48e9); // 0.48 USD
   static PRICE_49_CENT = UInt64.from(0.49e9); // 0.49 USD
   static PRICE_50_CENT = UInt64.from(0.5e9); // 0.50 USD

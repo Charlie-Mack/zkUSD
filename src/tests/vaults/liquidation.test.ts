@@ -93,24 +93,24 @@ describe('zkUSD Vault Liquidation Test Suite', () => {
     }, /Overflow/i);
   });
 
-  // it('should fail liquidation if liquidator does not have receive permissions', async () => {
-  //   await testHelper.transaction(testHelper.agents.bob.account, async () => {
-  //     let au = AccountUpdate.create(testHelper.agents.bob.account);
-  //     let permissions = Permissions.default();
-  //     permissions.receive = Permissions.impossible();
-  //     au.account.permissions.set(permissions);
-  //     AccountUpdate.attachToTransaction(au);
-  //     au.requireSignature();
-  //   });
+  it('should fail liquidation if liquidator does not have receive permissions', async () => {
+    await testHelper.transaction(testHelper.agents.bob.account, async () => {
+      let au = AccountUpdate.create(testHelper.agents.bob.account);
+      let permissions = Permissions.default();
+      permissions.receive = Permissions.impossible();
+      au.account.permissions.set(permissions);
+      AccountUpdate.attachToTransaction(au);
+      au.requireSignature();
+    });
 
-  //   await assert.rejects(async () => {
-  //     await testHelper.transaction(testHelper.agents.bob.account, async () => {
-  //       await testHelper.engine.contract.liquidate(
-  //         testHelper.agents.alice.vault!.publicKey
-  //       );
-  //     });
-  //   });
-  // });
+    await assert.rejects(async () => {
+      await testHelper.transaction(testHelper.agents.bob.account, async () => {
+        await testHelper.engine.contract.liquidate(
+          testHelper.agents.alice.vault!.publicKey
+        );
+      });
+    }, /Update_not_permitted_balance/i);
+  });
 
   it('should allow liquidation of vault if it is undercollateralized', async () => {
     //Price raises to 0.4
@@ -143,17 +143,11 @@ describe('zkUSD Vault Liquidation Test Suite', () => {
       testHelper.agents.alice.account
     );
 
-    await testHelper.transaction(
-      testHelper.agents.bob.account,
-      async () => {
-        await testHelper.engine.contract.liquidate(
-          testHelper.agents.alice.vault!.publicKey
-        );
-      },
-      {
-        printTx: true,
-      }
-    );
+    await testHelper.transaction(testHelper.agents.bob.account, async () => {
+      await testHelper.engine.contract.liquidate(
+        testHelper.agents.alice.vault!.publicKey
+      );
+    });
 
     const aliceVaultCollateralPostLiq =
       await testHelper.agents.alice.vault?.contract.collateralAmount.fetch();
@@ -175,36 +169,64 @@ describe('zkUSD Vault Liquidation Test Suite', () => {
 
     assert.equal(
       ZkUsdVault.LIQUIDATION_BONUS_RATIO.equals(Field.from(110)).toBoolean(),
-      true);
+      true
+    );
 
-    assert.deepStrictEqual(aliceVaultCollateralPostLiq, TestAmounts.ZERO, "Alice vault's collateral should be 0 after liquidation");
-    assert.deepStrictEqual(aliceVaultDebtPostLiq, TestAmounts.ZERO, "Alice vault's debt should be 0 after liquidation");
+    assert.deepStrictEqual(
+      aliceVaultCollateralPostLiq,
+      TestAmounts.ZERO,
+      "Alice vault's collateral should be 0 after liquidation"
+    );
+    assert.deepStrictEqual(
+      aliceVaultDebtPostLiq,
+      TestAmounts.ZERO,
+      "Alice vault's debt should be 0 after liquidation"
+    );
 
     const bobdiff = bobMinaBalancePostLiq.sub(bobMinaBalancePreLiq);
     const aliceDiff = aliceMinaBalancePostLiq.sub(aliceMinaBalancePreLiq);
 
     // total collateral returned should be equal to the collateral in the vault preliq
-    assert.deepStrictEqual(bobdiff.add(aliceDiff), aliceVaultCollateralPreLiq, "Total collateral returned should be equal to the collateral in the vault preliq");
+    assert.deepStrictEqual(
+      bobdiff.add(aliceDiff),
+      aliceVaultCollateralPreLiq,
+      'Total collateral returned should be equal to the collateral in the vault preliq'
+    );
 
     const ratio = UInt64.Unsafe.fromField(ZkUsdVault.LIQUIDATION_BONUS_RATIO);
 
     // bob collateral should be equal to the debt value of collateral + liquidation bonus,
     // which is defined by ratio, e.g. ratio 110 is 10% bonus
-    const collateralValue =  aliceVaultDebtPreLiq!.value.mul(Field.from(1e9)).div(price.value);
-    const valueWithLiquidationBonus = UInt64.Unsafe.fromField(collateralValue.mul(ratio.value).div(Field.from(100)));
+    const collateralValue = aliceVaultDebtPreLiq!.value
+      .mul(Field.from(1e9))
+      .div(price.value);
+    const valueWithLiquidationBonus = UInt64.Unsafe.fromField(
+      collateralValue.mul(ratio.value).div(Field.from(100))
+    );
 
     assert.deepStrictEqual(
       bobZkUsdBalancePostLiq,
       bobZkUsdBalancePreLiq.sub(aliceVaultDebtPreLiq!),
-      "Bob should have the paid debt remmoved from his zkUSD balance"
+      'Bob should have the paid debt removed from his zkUSD balance'
     );
     assert.deepStrictEqual(
       bobMinaBalancePostLiq,
       bobMinaBalancePreLiq.add(valueWithLiquidationBonus),
-      "Bob should have received bought collateral plus the liquidation bonus"
+      'Bob should have received bought collateral plus the liquidation bonus'
     );
-    assert.deepStrictEqual(aliceZkUsdBalancePostLiq, aliceZkUsdBalancePreLiq,
-                          "Alice private zkUSD should not have changed.");
+    assert.deepStrictEqual(
+      aliceZkUsdBalancePostLiq,
+      aliceZkUsdBalancePreLiq,
+      'Alice private zkUSD should not have changed.'
+    );
+    // Add check for Alice's remaining collateral
+    assert.deepStrictEqual(
+      aliceMinaBalancePostLiq,
+      aliceMinaBalancePreLiq.add(
+        aliceVaultCollateralPreLiq!.sub(valueWithLiquidationBonus)
+      ),
+      'Alice should have received the remaining collateral after liquidation bonus'
+    );
   });
 
   it('should emit the Liquidate event', async () => {
@@ -234,8 +256,102 @@ describe('zkUSD Vault Liquidation Test Suite', () => {
     );
     assert.deepStrictEqual(
       // @ts-ignore
-      latestEvent.event.data.price,
+      latestEvent.event.data.minaPrice,
       TestAmounts.PRICE_40_CENT
+    );
+  });
+
+  it('should give all collateral to liquidator when debt value exceeds collateral + liquidation bonus', async () => {
+    //Price starts at $1
+    await testHelper.updateOracleMinaPrice(TestAmounts.PRICE_1_USD);
+
+    // Setup: Dave deposits 100 MINA and mints 50 zkUSD
+    await testHelper.transaction(testHelper.agents.dave.account, async () => {
+      await testHelper.engine.contract.depositCollateral(
+        testHelper.agents.dave.vault!.publicKey,
+        TestAmounts.COLLATERAL_105_MINA
+      );
+    });
+
+    await testHelper.transaction(testHelper.agents.dave.account, async () => {
+      await testHelper.engine.contract.mintZkUsd(
+        testHelper.agents.dave.vault!.publicKey,
+        TestAmounts.DEBT_50_ZKUSD
+      );
+    });
+
+    // Price drops to 0.50, making the vault eligible for liquidation
+    // At this price:
+    // - 100 MINA collateral = $50
+    // - 50 zkUSD debt = $50 worth of MINA (100 MINA)
+    // - With 10% bonus, liquidator should get 110 MINA
+    // - Since only 105 MINA exists, liquidator gets all of it
+    await testHelper.updateOracleMinaPrice(TestAmounts.PRICE_50_CENT);
+
+    const daveVaultCollateralPreLiq =
+      await testHelper.agents.dave.vault?.contract.collateralAmount.fetch();
+    const daveVaultDebtPreLiq =
+      await testHelper.agents.dave.vault?.contract.debtAmount.fetch();
+    const bobZkUsdBalancePreLiq = await testHelper.token.contract.getBalanceOf(
+      testHelper.agents.bob.account
+    );
+    const bobMinaBalancePreLiq = Mina.getBalance(testHelper.agents.bob.account);
+    const daveMinaBalancePreLiq = Mina.getBalance(
+      testHelper.agents.dave.account
+    );
+
+    // Bob liquidates Dave's vault
+    await testHelper.transaction(testHelper.agents.bob.account, async () => {
+      await testHelper.engine.contract.liquidate(
+        testHelper.agents.dave.vault!.publicKey
+      );
+    });
+
+    const daveVaultCollateralPostLiq =
+      await testHelper.agents.dave.vault?.contract.collateralAmount.fetch();
+    const daveVaultDebtPostLiq =
+      await testHelper.agents.dave.vault?.contract.debtAmount.fetch();
+    const bobZkUsdBalancePostLiq = await testHelper.token.contract.getBalanceOf(
+      testHelper.agents.bob.account
+    );
+    const bobMinaBalancePostLiq = Mina.getBalance(
+      testHelper.agents.bob.account
+    );
+    const daveMinaBalancePostLiq = Mina.getBalance(
+      testHelper.agents.dave.account
+    );
+
+    // Verify vault is cleared
+    assert.deepStrictEqual(
+      daveVaultCollateralPostLiq,
+      TestAmounts.ZERO,
+      "Dave's vault collateral should be 0 after liquidation"
+    );
+    assert.deepStrictEqual(
+      daveVaultDebtPostLiq,
+      TestAmounts.ZERO,
+      "Dave's vault debt should be 0 after liquidation"
+    );
+
+    // Verify Bob (liquidator) received all collateral
+    const bobMinaDiff = bobMinaBalancePostLiq.sub(bobMinaBalancePreLiq);
+    assert.deepStrictEqual(
+      bobMinaDiff,
+      daveVaultCollateralPreLiq,
+      'Liquidator should receive all collateral when debt value exceeds collateral'
+    );
+    assert.deepStrictEqual(
+      bobZkUsdBalancePostLiq,
+      bobZkUsdBalancePreLiq.sub(daveVaultDebtPreLiq!),
+      'Liquidator should have paid the debt amount in zkUSD'
+    );
+
+    // Verify Dave (owner) received nothing
+    const daveMinaDiff = daveMinaBalancePostLiq.sub(daveMinaBalancePreLiq);
+    assert.deepStrictEqual(
+      daveMinaDiff,
+      TestAmounts.ZERO,
+      'Vault owner should receive nothing when debt value exceeds collateral'
     );
   });
 

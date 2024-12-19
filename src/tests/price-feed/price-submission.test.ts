@@ -174,7 +174,7 @@ describe('zkUSD Price Feed Oracle Submission Test Suite', () => {
     const contractEvents = await testHelper.engine.contract.fetchEvents();
     const latestEvent = contractEvents[0];
 
-    assert.strictEqual(latestEvent.type, 'PriceSubmission');
+    assert.strictEqual(latestEvent.type, 'MinaPriceSubmission');
     assert.strictEqual(
       // @ts-ignore
       latestEvent.event.data.submitter.toBase58(),
@@ -384,7 +384,7 @@ describe('zkUSD Price Feed Oracle Submission Test Suite', () => {
     const contractEvents = await testHelper.engine.contract.fetchEvents();
     const latestEvent = contractEvents[0];
 
-    assert.strictEqual(latestEvent.type, 'FallbackPriceUpdate');
+    assert.strictEqual(latestEvent.type, 'FallbackMinaPriceUpdate');
     assert.deepStrictEqual(
       // @ts-ignore
       latestEvent.event.data.newPrice,

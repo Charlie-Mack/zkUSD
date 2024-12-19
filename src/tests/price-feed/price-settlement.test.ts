@@ -25,7 +25,7 @@ describe('zkUSD Price Feed Oracle Price Settlement Test Suite', () => {
     const contractEvents = await testHelper.engine.contract.fetchEvents();
     const latestEvent = contractEvents[0];
 
-    assert.strictEqual(latestEvent.type, 'PriceUpdate');
+    assert.strictEqual(latestEvent.type, 'MinaPriceUpdate');
     assert.deepStrictEqual(
       // @ts-ignore
       latestEvent.event.data.newPrice,
@@ -49,7 +49,8 @@ describe('zkUSD Price Feed Oracle Price Settlement Test Suite', () => {
     testHelper.Local.setBlockchainLength(UInt32.from(2));
     await testHelper.updateOracleMinaPrice(TestAmounts.PRICE_52_CENT);
 
-    const evenPrice = await testHelper.engine.contract.minaPriceEvenBlock.fetch();
+    const evenPrice =
+      await testHelper.engine.contract.minaPriceEvenBlock.fetch();
 
     assert.strictEqual(
       evenPrice?.toString(),
@@ -199,7 +200,8 @@ describe('zkUSD Price Feed Oracle Price Settlement Test Suite', () => {
       testHelper.Local.getNetworkState().blockchainLength.add(1)
     );
 
-    const priceBeforeSettlement = await testHelper.engine.contract.getMinaPrice();
+    const priceBeforeSettlement =
+      await testHelper.engine.contract.getMinaPrice();
     assert.strictEqual(
       priceBeforeSettlement.toString(),
       TestAmounts.PRICE_52_CENT.add(TestAmounts.PRICE_2_USD)
